@@ -3,6 +3,7 @@
 from hashlib import sha1
 import sys
 import hmac
+import base64
 import re
 import sqlite3
 import os
@@ -18,24 +19,22 @@ class PWM(object):
 
     def __init__(self, key, db_path = None):
         self.key = key
-        self.passwd_length = 15
         self.db_path = db_path
         self.table = 'pwm'
 
-    def gen_passwd(self, raw):
+    def gen_passwd(self, raw, length, mode):
+        h = hmac.new(self.key.encode('utf-8'), raw.encode('utf-8'), sha1)
+        b64 = base64.b64encode(h.digest()).decode()
+        _passwd = b64[0: length]
+        return self._format_passwd(_passwd, mode)
 
-        h = hmac.new(self.key, raw, sha1)
-        base64 = h.digest().encode("base64")
-        _passwd = base64[0: self.passwd_length]
-        return self._format_passwd(_passwd)
-
-    def _format_passwd(self, passwd):
+    def _format_passwd(self, passwd, mode):
         # 格式化密码，必须包含大小写和数字
         self.num_str = "0123456789"
         self.low_letters = "abcdefghijklmnopqrstuvwxyz"
         self.upper_letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        passwd = passwd.replace("+", '0')
-        passwd = passwd.replace("/", '1')
+        passwd = passwd.replace("+", "0")
+        passwd = passwd.replace("/", "1")
         list_passwd = list(passwd)
 
         if re.search(r"[0-9]", passwd) is None:
@@ -51,7 +50,7 @@ class PWM(object):
 
     def _get_conn(self):
         if self.db_path is None:
-            print "You didn't set you PWD_DB_PATH ENV"
+            print( "You didn't set you PWD_DB_PATH ENV" )
             sys.exit(1)
         conn = sqlite3.connect(self.db_path)
         return conn
@@ -72,7 +71,9 @@ class PWM(object):
         create table if not exists {}(
           `id` INTEGER PRIMARY KEY,
           `domain` varchar(32) ,
-          `account` varchar(32)
+          `account` varchar(32),
+          `length` INTEGER,
+          `mode` INTEGER
           );
         """.format(self.table)
 
@@ -80,10 +81,10 @@ class PWM(object):
             cur = self.conn.cursor()
             cur.execute(sql)
 
-    def _insert_account(self, domain, account):
+    def _insert_account(self, domain, account, length, mode):
 
         self._create_table()
-        sql = "insert into {} (domain, account) values ('{}', '{}');".format(self.table, domain, account)
+        sql = "insert into {} (domain, account, length, mode) values ('{}', '{}', '{}', '{}');".format(self.table, domain, account, length, mode)
         with self:
             cur = self.conn.cursor()
             cur.execute(sql,)
@@ -97,13 +98,14 @@ class PWM(object):
         else:
             query = ""
 
-        sql = "select id,domain,account from {} {}".format(self.table, query)
-        # print sql
+        sql = "select id,domain,account,length,mode from {} {}".format(self.table, query)
+        # print( sql )
 
         with self:
             cur = self.conn.cursor()
             cur.execute(sql)
             result = cur.fetchall()
+            # print(result)
             return result
 
     def _delete(self, id):
@@ -115,22 +117,22 @@ class PWM(object):
             raw_count = cur.execute(sql)
             return raw_count
 
-    def insert(self, domain, account):
-        self._insert_account(domain, account)
-        print "save success"
+    def insert(self, domain, account, length, mode):
+        self._insert_account(domain, account, length, mode)
+        print( "save success" )
 
     @staticmethod
     def gen_sign_raw(domain, account):
         return "{}@{}".format(account, domain)
 
-    def gen_account_passwd(self, domain, account):
+    def gen_account_passwd(self, domain, account, length, mode):
 
         raw = self.gen_sign_raw(domain, account)
-        return self.gen_passwd(raw)
+        return self.gen_passwd(raw, length, mode)
 
     def delete(self, id):
         raw_count = self._delete(id)
-        print "remove success"
+        print( "remove success" )
 
     def search(self, keyword):
 
@@ -138,28 +140,30 @@ class PWM(object):
             keyword = ''
 
         result = self._query_account(keyword)
-        print "ID    DOMAIN      ACCOUNT     PASSWORD"
+        print( "ID".ljust(4), "DOMAIN".ljust(16),"ACCOUNT".ljust(24),"LENGTH".ljust(7),"MODE".ljust(5),"PASSWORD" )
         for item in result:
-            line = "{}    {}    {}      {}".format(item[0], item[1], item[2], self.gen_account_passwd(item[1], item[2]))
-            print line
+            print(str(item[0]).ljust(4), item[1].ljust(16), item[2].ljust(24), str(item[3]).ljust(7), str(item[4]).ljust(5), self.gen_account_passwd(item[1], item[2], item[3], item[4]))
 
-        print "A total of {} records".format(len(result))
+        print( "A total of {} records".format(len(result)) )
 
 
 def main():
 
     db_path = os.getenv("PWM_DB_PATH", None)
     if db_path is None:
-        print "##########WARNING:############"
-        print "You didn't set you PWD_DB_PATH ENV"
-        print "echo \"export PWM_DB_PATH=your_path\" >> ~/.bashrc"
-        print "source ~/.bashrc"
-        print "###############################"
+        # print( "##########WARNING:############" )
+        # print( "You didn't set you PWD_DB_PATH ENV" )
+        # print( "echo \"export PWM_DB_PATH=your_path\" >> ~/.bashrc" )
+        # print( "source ~/.bashrc" )
+        # print( "###############################" )
+        db_path = os.path.join(os.getcwd(), "pwm.db")
     parse = OptionParser(version="{} {}".format(__package, __version))
 
     parse.add_option('-k', '--key',help="your secret key", nargs=0)
     parse.add_option('-d', '--domain',help="the domain of you account")
     parse.add_option('-a', '--account',help="the account used to login")
+    parse.add_option('-l', '--length',help="the password length", default=15, type=int, nargs=1)
+    parse.add_option('-m', '--mode', help="the password mode", default=0, type=int, nargs=1)
     parse.add_option('-s', '--search',help="list your account and domain by search keyword")
     parse.add_option('-w', '--save',help="save your account and domain", nargs=0)
     parse.add_option('-r', '--remove',help="remove your account and domain by id", nargs=1, type=int)
@@ -184,20 +188,18 @@ def main():
 
     # 生成密码
     if bool(options.domain) is False or bool(options.account) is False:
-        parse.print_help()
+        parse.print_help() 
         return
 
-    print "passwd:{}".format(pwm.gen_account_passwd(options.domain, options.account))
+    print( "passwd:{}".format(pwm.gen_account_passwd(options.domain, options.account, options.length, options.mode)) )
 
     # 保存
     if options.save is not None:
-        pwm.insert(options.domain, options.account)
-
-
-
+        pwm.insert(options.domain, options.account, options.length, options.mode)
 
 
 if __name__ == "__main__":
 
     main()
+
 
