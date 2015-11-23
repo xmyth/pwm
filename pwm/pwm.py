@@ -140,9 +140,9 @@ class PWM(object):
             keyword = ''
 
         result = self._query_account(keyword)
-        print( "ID".ljust(4), "DOMAIN".ljust(16),"ACCOUNT".ljust(24),"LENGTH".ljust(7),"MODE".ljust(5),"PASSWORD" )
+        print( "ID".ljust(4), "DOMAIN".ljust(10),"ACCOUNT".ljust(18),"LENGTH".ljust(5),"MODE".ljust(4),"PASSWORD" )
         for item in result:
-            print(str(item[0]).ljust(4), item[1].ljust(16), item[2].ljust(24), str(item[3]).ljust(7), str(item[4]).ljust(5), self.gen_account_passwd(item[1], item[2], item[3], item[4]))
+            print(str(item[0]).ljust(4), item[1].ljust(10), item[2].ljust(20), str(item[3]).ljust(5), str(item[4]).ljust(3), self.gen_account_passwd(item[1], item[2], item[3], item[4]))
 
         print( "A total of {} records".format(len(result)) )
 
